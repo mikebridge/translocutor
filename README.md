@@ -1,11 +1,12 @@
-# ChatGPT VTT Subtitle Translator
+# Translocutor
 
-This is a python CLI that will translate VTT subtitle files into another language using the ChatGPT `gpt-4o` api.  
+Translocutor is a python CLI that will translate VTT subtitle files into another language 
+using the ChatGPT `gpt-4o` api.  
 
-Currently, it creates a new VTT file with both the original language and then the translated language in 
-a different colour.
+Currently, it creates a single VTT file that contains the original subtitles along with
+the translated language in a different colour.
 
-This is in an alpha state.
+This project is in an alpha state.
 
 ## Initial Setup
 
@@ -13,29 +14,35 @@ This is in an alpha state.
 
 First, ensure that you have an [API key for ChatGPT](https://platform.openai.com/docs/quickstart/create-and-export-an-api-key).
 
-Then set it in your environment, either by setting it or putting it in the `.env` file:
+Then set it in your environment:
 
 ```sh
 export OPENAI_API_KEY=my_key_value
 ```
 
+You can alternatively set the key in the .env file.
+
 ### Python
 
-It's recommended that you create a virtual python environment rather than use the default installation:
+It's recommended that you create a virtual python environment rather than use the 
+default installation:
 
 ```sh
 pip3 install venv
 mkdir -i ~/venv # or wherever you want to store your virtual environments
 cd ~/venv
-python3 -m venv chatgpt-subtitle-translator
-source ~/venv/chatgpt-subtitle-translator/bin/activate
+python3 -m venv translocutor
+source ~/venv/translocutor/bin/activate
 ```
 
-Once you have a virtual environment active, you can install the required packages by running the following command:
+Once you have a virtual environment active, you can install the required packages 
+by running the following command:
 
 ```sh
 pip install -r requirements.txt
 ```
+
+## Usage
 
 Once you've installed the required packages, you can run the script with the following command:
 
@@ -58,6 +65,19 @@ There is some minimal help available:
 python -m main --help
 ```
 
+## Getting VTT Files
+
+[yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/Installation) can be a good way
+of getting vtt files, e.g.:
+
+```sh
+yt-dlp --all-subs https://example.com/whatever-video
+```
+
 ## Technical Notes
 
-This uses the ChatGPT API and the 
+This uses ChatGPT API's [structured outputs](https://openai.com/index/introducing-structured-outputs-in-the-api/).
+
+## Legal Disclaimer
+
+This project has nothing to do with ChatGPT or OpenAI.  It's just a project that uses their APIs.
