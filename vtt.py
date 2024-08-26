@@ -43,7 +43,6 @@ def create_vtt(caption_pair_list):
 
 
 def write_output_file(new_file_name: str, caption_pair_list: List[TranslatedCaptionResult]):
-    print(f'writing to {new_file_name}')
     vtt = create_vtt(caption_pair_list)
     with io.open(new_file_name, 'w', encoding='utf8') as fd:
         vtt.write(fd)

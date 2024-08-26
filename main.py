@@ -6,7 +6,7 @@ import sys
 
 from dotenv import load_dotenv
 from typing import TypedDict, List
-from chatgpt import partition_and_translate_messages
+from chatgpt import translate_subtitles, UsageResult
 from common import MessageRequest, TranslatedCaptionResult
 from vtt import write_output_file, read_captions
 
@@ -51,17 +51,34 @@ def check_env_vars_or_exit():
         exit(1)
 
 
+def simple_log(message: str) -> None:
+    print(message)
+
+
 def main(main_args: MainArgs):
     message_list: List[MessageRequest] = read_captions(main_args['file'])
+    # create a function that I can pass in that takes a string and prints it
 
     # caption_pair_list: List[CaptionResult] = TEST_RESPONSE.captions
-    caption_pair_list: List[TranslatedCaptionResult] = partition_and_translate_messages(
+    caption_pair_list: List[TranslatedCaptionResult]
+    usage_result: UsageResult
+    caption_pair_list, estimated_token_count, usage_result = translate_subtitles(
         main_args['target_language'],
         main_args['model'],
-        message_list)
+        message_list,
+        simple_log,
+        simple_log
+    )
 
+    # TODO: this number seems way off compared with what comes back from the result
+    print('estimated tokens: ', estimated_token_count)
     new_file_name = create_file_name(main_args["file"]) or 'new_captions.vtt'
+    print(f'writing to {new_file_name}')
     write_output_file(new_file_name, caption_pair_list)
+    print('token usage:')
+    print('    prompt:     ', usage_result.prompt_tokens)
+    print('    completion: ', usage_result.completion_tokens)
+    print('    total:      ', usage_result.total_tokens)
 
 
 if __name__ == '__main__':

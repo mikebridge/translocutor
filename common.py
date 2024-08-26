@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Callable
 
 from pydantic import BaseModel
 
@@ -27,3 +27,8 @@ class MessageRequest(BaseModel):
     start: str
     end: str
     caption: List[str]  # list of lines in the caption
+
+
+# declare a type for a function that takes a string and has no return value
+# this is a type hint for a callback function
+SimpleLog = Callable[[str], None]

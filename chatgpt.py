@@ -4,7 +4,7 @@ import tiktoken
 from openai import OpenAI
 from pydantic import BaseModel
 
-from common import FullTranslatedCaptionResult, TranslatedCaptionResult, MessageRequest
+from common import FullTranslatedCaptionResult, TranslatedCaptionResult, MessageRequest, SimpleLog
 from text_utils import json_dump
 
 # responses will contain a maximum of 4K tokens, regardless of input size,
@@ -35,8 +35,52 @@ DEFAULT_TARGET_TOKENS = 3500
 # }
 
 
+class UsageResult(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
 class TranslationResponse(BaseModel):
     captions: list[TranslatedCaptionResult]
+    usage: UsageResult
+
+
+def translate_subtitles(
+        target_language: str,
+        model: str,
+        message_list: List[MessageRequest],
+        on_start: SimpleLog,
+        on_end: SimpleLog
+) -> Tuple[List[FullTranslatedCaptionResult], int, UsageResult]:
+    """
+    Translate a list of subtitles/captions to a target language.
+
+    see: https://openai.com/index/introducing-structured-outputs-in-the-api/
+
+    :param target_language: The target language, in any form that chatgpt will understand (e.g. "English")
+    :param message_list: list of captions to be sent to chatgpt
+    :param model: the chatgpt api model (e.g. "gpt-4o")
+    :param on_start: a function to be called with a status message when starting to translate a partition
+    :param on_end: a function to be called with a status message when finished translating a partition
+    """
+    partitioned_message_request_list, estimated_token_count = partition_message_request_list(
+        message_list,
+        DEFAULT_TARGET_TOKENS,
+        model)
+
+    partitioned_results: List[List[FullTranslatedCaptionResult]]
+    usage_result: UsageResult
+    partitioned_results, usage_result = translate_partitioned_message_list(
+        partitioned_message_request_list,
+        target_language,
+        on_start,
+        on_end
+    )
+
+    # join up all the partitioned responses
+    return ([caption_result for partitioned_result in partitioned_results for caption_result in partitioned_result],
+            estimated_token_count, usage_result)
 
 
 def estimate_tokens(message_request_list: List[MessageRequest], model: str) -> int:
@@ -45,55 +89,71 @@ def estimate_tokens(message_request_list: List[MessageRequest], model: str) -> i
     return len(tokens)
 
 
-# TODO: verify that tiktoken is configured correctly for the payload
-def translate_message_request_list(message_request_list: List[MessageRequest], target_tokens, model) -> (
+def partition_message_request_list(
+        message_request_list: List[MessageRequest],
+        target_tokens: int,
+        model: str
+) -> (
         Tuple)[List[List[MessageRequest]], int]:
+    """
+    partition the list of messages into groups that are small enough to send to the chatgpt api
+
+    Note: this doesn't seem to do a good job at estimating the tokens in the request, based on the response we get back
+
+    :param message_request_list: the list of messages to partition and send
+    :param target_tokens: the target number of tokens to be used for partitioning the response
+    :param model: the chatgpt model
+    """
     partitioned_message_request_list: List[List[MessageRequest]] = [[]]
     total_token_count = 0
     current_token_count = 0
     for message_request in message_request_list:
-        token_count = estimate_tokens([message_request], model)
-        if current_token_count + token_count > target_tokens:
+        incremental_token_count = estimate_tokens([message_request], model)
+        if current_token_count + incremental_token_count > target_tokens:
             partitioned_message_request_list.append([])
             current_token_count = 0
-        current_token_count += token_count
-        total_token_count += token_count
+        current_token_count += incremental_token_count
+        total_token_count += incremental_token_count
         partitioned_message_request_list[-1].append(message_request)
     return partitioned_message_request_list, total_token_count
 
 
-def partition_and_translate_messages(
-        target_language: str,
-        model: str,
-        message_list: List[MessageRequest]):
-
-    partitioned_message_request_list, tokens = translate_message_request_list(
-        message_list,
-        DEFAULT_TARGET_TOKENS,
-        model)
-
-    print(f'estimated token count : {tokens}')
-    partitioned_results = translate_partitioned_message_list(partitioned_message_request_list, target_language)
-
-    # join up all the partitioned responses
-    return [caption_result for partitioned_result in partitioned_results for caption_result in partitioned_result]
-
-
-def translate_partitioned_message_list(partitioned_message_request_list, target_language):
+def translate_partitioned_message_list(
+        partitioned_message_request_list,
+        target_language,
+        on_start,
+        on_end
+) -> (
+        Tuple)[List[List[FullTranslatedCaptionResult]], UsageResult]:
     client = OpenAI()
-    partitioned_results: List[List[TranslatedCaptionResult]] = []
+    partitioned_results: List[List[FullTranslatedCaptionResult]] = []
+    total_usage_result: UsageResult = UsageResult(
+        prompt_tokens=0,
+        completion_tokens=0,
+        total_tokens=0
+    )
     for index, message_request_list in enumerate(partitioned_message_request_list, start=1):
-        print(f'translating partition {index} of {len(partitioned_message_request_list)}...')
-        partitioned_caption_pair_list: List[FullTranslatedCaptionResult] = translate_messages(
+        partitioned_caption_pair_list: List[FullTranslatedCaptionResult]
+        usage: UsageResult
+
+        on_start(f'translating partition {index} of {len(partitioned_message_request_list)}...')
+        partitioned_caption_pair_list, usage = translate_messages(
             client,
             target_language,
             message_request_list)
+        on_end("completed...")
+
         partitioned_results.append(partitioned_caption_pair_list)
-    return partitioned_results
+        if total_usage_result and usage:
+            total_usage_result = UsageResult(
+                prompt_tokens=total_usage_result.prompt_tokens + usage.prompt_tokens,
+                completion_tokens=total_usage_result.completion_tokens + usage.completion_tokens,
+                total_tokens=total_usage_result.total_tokens + usage.total_tokens
+            )
+    return partitioned_results, total_usage_result
 
 
-# see: https://openai.com/index/introducing-structured-outputs-in-the-api/
-def translate_messages(client, lang, message_request_list) -> List[FullTranslatedCaptionResult]:
+def translate_messages(client, lang, message_request_list) -> Tuple[List[FullTranslatedCaptionResult], UsageResult]:
     json_translation_message = json_dump(message_request_list)
     completion = client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
@@ -105,14 +165,12 @@ def translate_messages(client, lang, message_request_list) -> List[FullTranslate
         response_format=TranslationResponse,
     )
     message = completion.choices[0].message
-    if message.parsed:
-        print('...completed')
-        # print(message.parsed.captions)
-    else:
-        print("*** ERROR ***")
-        print(message.refusal)
-        exit(1)
+    # TODO: test the throwing of this
+    if not message.parsed:
+        # throw the error
+        raise RuntimeError(f"OpenAI API call failed: {message.refusal}")
     translated_captions: List[TranslatedCaptionResult] = message.parsed.captions
+    usage: UsageResult = message.parsed.usage
 
     # add the original text back in to each caption
     full_translated_captions: List[FullTranslatedCaptionResult] = []
@@ -123,4 +181,5 @@ def translate_messages(client, lang, message_request_list) -> List[FullTranslate
             original=message_request_list[index].caption,
             translated=caption.translated
         ))
-    return full_translated_captions
+
+    return full_translated_captions, usage

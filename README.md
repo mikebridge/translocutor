@@ -78,6 +78,12 @@ yt-dlp --all-subs https://example.com/whatever-video
 
 This uses ChatGPT API's [structured outputs](https://openai.com/index/introducing-structured-outputs-in-the-api/).
 
+Translocutor partitions the caption file and submits one partition at a time containing several lines.  
+This should increase the accuracy of the translation by providing more context and continuity, 
+instead of just submitting one line or one caption at a time.  This is done by estimating the 
+tokens with [tiktoken](https://github.com/openai/tiktoken) and making a guess at the size of the 
+result, to try to keep it under 4096 tokens.
+
 ## Legal Disclaimer
 
 This project has nothing to do with ChatGPT or OpenAI.  It's just a project that uses their APIs.
