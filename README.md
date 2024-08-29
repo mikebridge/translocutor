@@ -42,12 +42,18 @@ by running the following command:
 pip install -r requirements.txt
 ```
 
+Then set up the translocutor package in the venv:
+
+```sh
+pip install -e . 
+```
+
 ## Usage
 
 Once you've installed the required packages, you can run the script with the following command:
 
 ```
-python -m main -f my_subtitle_file.fr.vtt
+translocutor -f my_subtitle_file.fr.vtt
 ```
 
 This will pass your subtitle file to the ChatGPT API, and write a new .vtt file
@@ -56,13 +62,13 @@ You can translate to something other than English (the default).  ChatGPT seems 
 able to figure out what language you want.  Feel free to experiment.
 
 ```
-python -m main -t german -f my_subtitle_file.fr.vtt
+translocutor -t german -f my_subtitle_file.fr.vtt
 ```
 
 There is some minimal help available:
 
 ```
-python -m main --help
+translocutor --help
 ```
 
 ## Getting VTT Files

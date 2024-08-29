@@ -1,7 +1,7 @@
 from typing import List
 
-from chatgpt import TranslationResponse
-from common import MessageRequest, FullTranslatedCaptionResult
+from .chatgpt import TranslationResponse
+from .common import MessageRequest, FullTranslatedCaptionResult
 
 TEST_MESSAGE: List[MessageRequest] = [
     MessageRequest(
