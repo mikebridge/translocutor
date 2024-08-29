@@ -4,8 +4,8 @@ import tiktoken
 from openai import OpenAI
 from pydantic import BaseModel
 
-from common import FullTranslatedCaptionResult, TranslatedCaptionResult, MessageRequest, SimpleLog
-from text_utils import json_dump
+from .common import FullTranslatedCaptionResult, TranslatedCaptionResult, MessageRequest, SimpleLog
+from .text_utils import json_dump
 
 # responses will contain a maximum of 4K tokens, regardless of input size,
 # so we will estimate the result based on what we send, with a slight buffer.

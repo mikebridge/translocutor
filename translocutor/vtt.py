@@ -4,7 +4,7 @@ from typing import List
 import webvtt
 from webvtt import WebVTT
 
-from common import TranslatedCaptionResult, MessageRequest
+from .common import TranslatedCaptionResult, MessageRequest
 
 
 STYLE = "position:10%,line-left align:left size:35%"

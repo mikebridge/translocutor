@@ -6,9 +6,9 @@ import sys
 
 from dotenv import load_dotenv
 from typing import TypedDict, List
-from chatgpt import translate_subtitles, UsageResult
-from common import MessageRequest, TranslatedCaptionResult
-from vtt import write_output_file, read_captions
+from .chatgpt import translate_subtitles, UsageResult
+from .common import MessageRequest, TranslatedCaptionResult
+from .vtt import write_output_file, read_captions
 
 
 class MainArgs(TypedDict):
@@ -55,7 +55,7 @@ def simple_log(message: str) -> None:
     print(message)
 
 
-def main(main_args: MainArgs):
+def process(main_args: MainArgs):
     message_list: List[MessageRequest] = read_captions(main_args['file'])
     # create a function that I can pass in that takes a string and prints it
 
@@ -81,15 +81,19 @@ def main(main_args: MainArgs):
     print('    total:      ', usage_result.total_tokens)
 
 
-if __name__ == '__main__':
+def main():
     load_dotenv()
     check_env_vars_or_exit()
     args = get_args()
 
     for file_path in args.file:
         print(f"reading file: {file_path}")
-        mainArgs = MainArgs(
+        main_args = MainArgs(
             file=file_path,
             model="gpt-4o",
             target_language=args.target_language)
-        main(mainArgs)
+        process(main_args)
+
+
+if __name__ == '__main__':
+    main()
