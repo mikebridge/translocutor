@@ -3,6 +3,8 @@ import argparse
 import os
 import pathlib
 import sys
+import logging
+import traceback
 
 from dotenv import load_dotenv
 from typing import TypedDict, List
@@ -15,6 +17,7 @@ class MainArgs(TypedDict):
     file: str
     model: str
     target_language: str
+    verbose: bool
 
 
 def create_file_name(orig_file_name: str, ext: str = 'all') -> str:
@@ -29,6 +32,9 @@ def get_args():
     parser = argparse.ArgumentParser(description='Download Files from Google Drive')
     parser.add_argument('-f', '--file', nargs='+', help='vtt file(s)', required=True)
     parser.add_argument('-t', '--target-language', help='target language', default="English", required=False)
+    parser.add_argument('-m', '--model', help='model (e.g. gpt-4o)', default="gpt-4o", required=False)
+    parser.add_argument('-v', '--verbose', help='debugging output', action='store_true', default=False)
+
     parser.set_defaults(join=False)
     arg_list = parser.parse_args()
     for file in arg_list.file:
@@ -51,10 +57,6 @@ def check_env_vars_or_exit():
         exit(1)
 
 
-def simple_log(message: str) -> None:
-    print(message)
-
-
 def process(main_args: MainArgs):
     message_list: List[MessageRequest] = read_captions(main_args['file'])
     # create a function that I can pass in that takes a string and prints it
@@ -66,19 +68,20 @@ def process(main_args: MainArgs):
         main_args['target_language'],
         main_args['model'],
         message_list,
-        simple_log,
-        simple_log
+        logging.info,
+        logging.info
     )
 
     # TODO: this number seems way off compared with what comes back from the result
-    print('estimated tokens: ', estimated_token_count)
+    logging.info('estimated tokens: %s', estimated_token_count)
     new_file_name = create_file_name(main_args["file"]) or 'new_captions.vtt'
-    print(f'writing to {new_file_name}')
+    logging.info(f'writing to {new_file_name}')
     write_output_file(new_file_name, caption_pair_list)
-    print('token usage:')
-    print('    prompt:     ', usage_result.prompt_tokens)
-    print('    completion: ', usage_result.completion_tokens)
-    print('    total:      ', usage_result.total_tokens)
+    logging.info('token usage:')
+    logging.info('    model:      %s', main_args['model'])
+    logging.info('    prompt:     %s', usage_result.prompt_tokens)
+    logging.info('    completion: %s', usage_result.completion_tokens)
+    logging.info('    total:      %s', usage_result.total_tokens)
 
 
 def main():
@@ -86,13 +89,26 @@ def main():
     check_env_vars_or_exit()
     args = get_args()
 
-    for file_path in args.file:
-        print(f"reading file: {file_path}")
-        main_args = MainArgs(
-            file=file_path,
-            model="gpt-4o",
-            target_language=args.target_language)
-        process(main_args)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+    try:
+        for file_path in args.file:
+            logging.info(f"reading file: {file_path}")
+            if args.verbose:
+                logging.info('    verbose: True')
+            main_args = MainArgs(
+                file=file_path,
+                model=args.model,
+                target_language=args.target_language,
+                verbose=args.verbose
+            )
+            process(main_args)
+    except Exception as e:
+        logging.error("An error occurred: %s", str(e))
+        if args.verbose:
+            logging.debug("Traceback: %s", traceback.format_exc())
+        else:
+            logging.info("Run with --verbose for more information")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -1,4 +1,7 @@
+import os
 from typing import List, Tuple
+import logging
+import time
 
 import tiktoken
 from openai import OpenAI
@@ -11,6 +14,10 @@ from .text_utils import json_dump
 # so we will estimate the result based on what we send, with a slight buffer.
 DEFAULT_TARGET_TOKENS = 3500
 
+
+# DEFAULT_TARGET_TOKENS = 2500
+
+# TODO: https://platform.openai.com/settings/organization/limits
 # /**
 # * In USD per 1000 tokens
 # */
@@ -41,9 +48,19 @@ class UsageResult(BaseModel):
     total_tokens: int
 
 
+class Limit(BaseModel):
+    x_ratelimit_limit_requests: int
+    x_ratelimit_limit_tokens: int
+    x_ratelimit_remaining_requests: int
+    x_ratelimit_reset_requests: str
+    x_ratelimit_remaining_tokens: int
+    x_ratelimit_reset_tokens: str
+
+
 class TranslationResponse(BaseModel):
     captions: list[TranslatedCaptionResult]
     usage: UsageResult
+    # limit_headers: Limit
 
 
 def translate_subtitles(
@@ -51,7 +68,7 @@ def translate_subtitles(
         model: str,
         message_list: List[MessageRequest],
         on_start: SimpleLog,
-        on_end: SimpleLog
+        on_end: SimpleLog,
 ) -> Tuple[List[FullTranslatedCaptionResult], int, UsageResult]:
     """
     Translate a list of subtitles/captions to a target language.
@@ -69,13 +86,16 @@ def translate_subtitles(
         DEFAULT_TARGET_TOKENS,
         model)
 
+    logging.info("estimated total tokens: %s", estimated_token_count)
+
     partitioned_results: List[List[FullTranslatedCaptionResult]]
     usage_result: UsageResult
     partitioned_results, usage_result = translate_partitioned_message_list(
         partitioned_message_request_list,
         target_language,
         on_start,
-        on_end
+        on_end,
+        model
     )
 
     # join up all the partitioned responses
@@ -111,21 +131,35 @@ def partition_message_request_list(
         incremental_token_count = estimate_tokens([message_request], model)
         if current_token_count + incremental_token_count > target_tokens:
             partitioned_message_request_list.append([])
+            logging.info("estimated partition token count: %s", current_token_count)
             current_token_count = 0
         current_token_count += incremental_token_count
         total_token_count += incremental_token_count
         partitioned_message_request_list[-1].append(message_request)
+    logging.info("estimated partition token count: %s", current_token_count)
     return partitioned_message_request_list, total_token_count
+
+
+def create_openai_client():
+    organization_id = os.getenv("ORGANIZATION_ID", None)
+    if organization_id:
+        logging.info(f'organization_id: {organization_id}')
+        return OpenAI(organization=organization_id)
+    else:
+        logging.info('no organization id specified')
+        return OpenAI()
 
 
 def translate_partitioned_message_list(
         partitioned_message_request_list,
         target_language,
         on_start,
-        on_end
+        on_end,
+        model,
+        delay_seconds=0
 ) -> (
         Tuple)[List[List[FullTranslatedCaptionResult]], UsageResult]:
-    client = OpenAI()
+    client = create_openai_client()
     partitioned_results: List[List[FullTranslatedCaptionResult]] = []
     total_usage_result: UsageResult = UsageResult(
         prompt_tokens=0,
@@ -136,11 +170,13 @@ def translate_partitioned_message_list(
         partitioned_caption_pair_list: List[FullTranslatedCaptionResult]
         usage: UsageResult
 
-        on_start(f'translating partition {index} of {len(partitioned_message_request_list)}...')
+        on_start(f'translating partition {index} of {len(partitioned_message_request_list)} with {model}.')
+
         partitioned_caption_pair_list, usage = translate_messages(
             client,
             target_language,
-            message_request_list)
+            message_request_list,
+            model)
         on_end("completed...")
 
         partitioned_results.append(partitioned_caption_pair_list)
@@ -150,36 +186,63 @@ def translate_partitioned_message_list(
                 completion_tokens=total_usage_result.completion_tokens + usage.completion_tokens,
                 total_tokens=total_usage_result.total_tokens + usage.total_tokens
             )
+
+        # delay between calls
+        time.sleep(delay_seconds)
     return partitioned_results, total_usage_result
 
 
-def translate_messages(client, lang, message_request_list) -> Tuple[List[FullTranslatedCaptionResult], UsageResult]:
+def translate_messages(client, lang, message_request_list, model) -> Tuple[
+    List[FullTranslatedCaptionResult], UsageResult]:
     json_translation_message = json_dump(message_request_list)
-    completion = client.beta.chat.completions.parse(
-        model="gpt-4o-2024-08-06",
-        messages=[
-            {"role": "system",
-             "content": f"Translate the following sets of text to {lang}"},
-            {"role": "user", "content": json_translation_message}
-        ],
-        response_format=TranslationResponse,
-    )
-    message = completion.choices[0].message
-    # TODO: test the throwing of this
-    if not message.parsed:
-        # throw the error
-        raise RuntimeError(f"OpenAI API call failed: {message.refusal}")
-    translated_captions: List[TranslatedCaptionResult] = message.parsed.captions
-    usage: UsageResult = message.parsed.usage
+    # https://platform.openai.com/docs/api-reference/debugging-requests
+    try:
+        # response = client.beta.chat.completions.with_raw_response.create(
+        completion = client.beta.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system",
+                 "content": f"Translate the following sets of auto-transcribed text to {lang}, making it sound like natural spoken language."},
+                {"role": "user", "content": json_translation_message}
+            ],
+            response_format=TranslationResponse,
+        )
+        # logging.info("   request_id:         ", response.headers.get('x-request-id'))
+        # logging.info("   limit requests:     ", response.headers.get('x-ratelimit-limit-requests'))
+        # logging.info("   limit tokens:       ", response.headers.get('x-ratelimit-limit-tokens'))
+        # logging.info("   remaining requests: ", response.headers.get('x-ratelimit-remaining-requests'))
+        # logging.info("   reset requests:     ", response.headers.get('x-ratelimit-reset-requests'))
+        # logging.info("   remaining tokens:   ", response.headers.get('x-ratelimit-remaining-tokens'))
+        # logging.info("   reset tokens        ", response.headers.get('x-ratelimit-reset-tokens'))
+        #
+        # completion = response.parse()
+        message = completion.choices[0].message
 
-    # add the original text back in to each caption
-    full_translated_captions: List[FullTranslatedCaptionResult] = []
-    for index, caption in enumerate(translated_captions):
-        full_translated_captions.append(FullTranslatedCaptionResult(
-            start=caption.start,
-            end=caption.end,
-            original=message_request_list[index].caption,
-            translated=caption.translated
-        ))
+        if not message.parsed:
+            # throw the error
+            # logging.info(completion.error_message)
+            # logging.info('limits:')
+            # logging.info("  limit requests:     %s", message.parsed.limit_headers.x_ratelimit_limit_requests)
+            # logging.info("  limit tokens:       %s", message.parsed.limit_headers.x_ratelimit_limit_tokens)
+            # logging.info("  reset requests:     %s", message.parsed.limit_headers.x_ratelimit_reset_requests)
+            # logging.info("  reset tokens:       %s", message.parsed.limit_headers.x_ratelimit_reset_tokens)
+            # logging.info("  remaining requests: %s", message.parsed.limit_headers.x_ratelimit_remaining_requests)
+            # logging.info("  remaining tokens:   %s", message.parsed.limit_headers.x_ratelimit_remaining_tokens)
+            raise RuntimeError(f"OpenAI API call failed: {message.refusal}")
+        translated_captions: List[TranslatedCaptionResult] = message.parsed.captions
+        usage: UsageResult = message.parsed.usage
 
-    return full_translated_captions, usage
+        # add the original text back in to each caption
+        full_translated_captions: List[FullTranslatedCaptionResult] = []
+        for index, caption in enumerate(translated_captions):
+            full_translated_captions.append(FullTranslatedCaptionResult(
+                start=caption.start,
+                end=caption.end,
+                original=message_request_list[index].caption,
+                translated=caption.translated
+            ))
+
+        return full_translated_captions, usage
+    except Exception as e:
+        # logging.error(e)
+        raise e

@@ -12,15 +12,15 @@ This project is in an alpha state.
 
 ### OpenAI Key
 
-First, ensure that you have an [API key for ChatGPT](https://platform.openai.com/docs/quickstart/create-and-export-an-api-key).
-
-Then set it in your environment:
+First, ensure that you have an [API key for ChatGPT](https://platform.openai.com/docs/quickstart/create-and-export-an-api-key), and check if you have
+an [organization id](https://platform.openai.com/settings/organization/general), then set them in your environment:
 
 ```sh
 export OPENAI_API_KEY=my_key_value
+export ORGANIZATION_ID=my_organization_id
 ```
 
-You can alternatively set the key in the .env file.
+You can alternatively set the keys in the .env file.
 
 ### Python
 

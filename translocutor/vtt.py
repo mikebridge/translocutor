@@ -6,7 +6,6 @@ from webvtt import WebVTT
 
 from .common import TranslatedCaptionResult, MessageRequest
 
-
 STYLE = "position:10%,line-left align:left size:35%"
 SYSTEM_CONTENT = "You are a helpful assistant that translates text."
 COLOUR_ORIG = "yellow"
