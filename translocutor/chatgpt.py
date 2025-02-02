@@ -10,13 +10,6 @@ from pydantic import BaseModel
 from .common import FullTranslatedCaptionResult, TranslatedCaptionResult, MessageRequest, SimpleLog
 from .text_utils import json_dump
 
-# responses will contain a maximum of 4K tokens, regardless of input size,
-# so we will estimate the result based on what we send, with a slight buffer.
-DEFAULT_TARGET_TOKENS = 3500
-
-
-# DEFAULT_TARGET_TOKENS = 2500
-
 # TODO: https://platform.openai.com/settings/organization/limits
 # /**
 # * In USD per 1000 tokens
@@ -66,6 +59,7 @@ class TranslationResponse(BaseModel):
 def translate_subtitles(
         target_language: str,
         model: str,
+        max_tokens: int,
         message_list: List[MessageRequest],
         on_start: SimpleLog,
         on_end: SimpleLog,
@@ -75,6 +69,7 @@ def translate_subtitles(
 
     see: https://openai.com/index/introducing-structured-outputs-in-the-api/
 
+    :param max_tokens: the approximate number of tokens to be used in the call
     :param target_language: The target language, in any form that chatgpt will understand (e.g. "English")
     :param message_list: list of captions to be sent to chatgpt
     :param model: the chatgpt api model (e.g. "gpt-4o")
@@ -83,7 +78,7 @@ def translate_subtitles(
     """
     partitioned_message_request_list, estimated_token_count = partition_message_request_list(
         message_list,
-        DEFAULT_TARGET_TOKENS,
+        max_tokens,
         model)
 
     logging.info("estimated total tokens: %s", estimated_token_count)
@@ -111,7 +106,7 @@ def estimate_tokens(message_request_list: List[MessageRequest], model: str) -> i
 
 def partition_message_request_list(
         message_request_list: List[MessageRequest],
-        target_tokens: int,
+        max_tokens: int,
         model: str
 ) -> (
         Tuple)[List[List[MessageRequest]], int]:
@@ -121,7 +116,7 @@ def partition_message_request_list(
     Note: this doesn't seem to do a good job at estimating the tokens in the request, based on the response we get back
 
     :param message_request_list: the list of messages to partition and send
-    :param target_tokens: the target number of tokens to be used for partitioning the response
+    :param max_tokens: the target number of tokens to be used for partitioning the response
     :param model: the chatgpt model
     """
     partitioned_message_request_list: List[List[MessageRequest]] = [[]]
@@ -129,7 +124,7 @@ def partition_message_request_list(
     current_token_count = 0
     for message_request in message_request_list:
         incremental_token_count = estimate_tokens([message_request], model)
-        if current_token_count + incremental_token_count > target_tokens:
+        if current_token_count + incremental_token_count > max_tokens:
             partitioned_message_request_list.append([])
             logging.info("estimated partition token count: %s", current_token_count)
             current_token_count = 0
